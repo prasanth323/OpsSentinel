@@ -2,6 +2,7 @@
   "name": "ops-sentinel",
   "version": "1.0.0",
   "description": "OpsSentinel - Autonomous Multi-Agent SRE Incident Remediation Engine",
+  "type": "module",
   "scripts": {
     "build": "npm --prefix client install && npm --prefix client run build",
     "build:client": "npm --prefix client install && npm --prefix client run build",
@@ -9,8 +10,19 @@
     "dev:client": "npm --prefix client run dev",
     "install:server": "npm --prefix server install",
     "install:client": "npm --prefix client install",
-    "install:all": "npm run install:server && npm run install:client",
-    "start": "npm --prefix server start"
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "start": "node server/src/server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.1",
+    "zod": "^3.24.2"
   },
   "keywords": ["agentic-ai", "sre", "multi-agent", "gemini", "hackathon"]
 }
