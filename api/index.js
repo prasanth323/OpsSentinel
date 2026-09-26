@@ -9,7 +9,7 @@ dotenv.config();
 
 const app = express();
 
-// Initialize Database Schemas (SQLite or In-Memory Serverless)
+// Initialize Database Schemas (Dual SQLite & Serverless In-Memory)
 initDatabase();
 
 // Middleware
@@ -20,12 +20,15 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// API Routes
+// Support both prefixed and non-prefixed API routes for Vercel
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/agents', agentRoutes);
+app.use('/agents', agentRoutes);
 
 // Health Check API
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ONLINE',
     system: 'OpsSentinel Autonomous SRE Defense Engine (Vercel Serverless)',

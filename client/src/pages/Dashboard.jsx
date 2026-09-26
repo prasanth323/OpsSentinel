@@ -58,6 +58,17 @@ const DEMO_SCENARIOS = [
   }
 ];
 
+const formatTimestamp = (dateStr) => {
+  if (!dateStr) return 'Just now';
+  try {
+    const formatted = typeof dateStr === 'string' ? dateStr.replace(' ', 'T') : dateStr;
+    const date = new Date(formatted);
+    return isNaN(date.getTime()) ? 'Recently' : date.toLocaleTimeString();
+  } catch (e) {
+    return 'Recently';
+  }
+};
+
 export default function Dashboard() {
   const [currentMetrics, setCurrentMetrics] = useState({
     errorRate: 0.02,
@@ -509,7 +520,7 @@ export default function Dashboard() {
                           {inc.confidence_score ? `${inc.confidence_score}%` : '—'}
                         </td>
                         <td className="py-2.5 px-4 text-slate-500 text-[11px]">
-                          {new Date(inc.created_at).toLocaleTimeString()}
+                          {formatTimestamp(inc.created_at)}
                         </td>
                       </tr>
                     ))
@@ -524,7 +535,7 @@ export default function Dashboard() {
 
       {/* CUSTOM INCIDENT MODAL */}
       {showCustomModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg overflow-hidden shadow-2xl">
             <div className="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">

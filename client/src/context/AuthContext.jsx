@@ -9,58 +9,83 @@ export const api = axios.create({
 });
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('ops_sentinel_token') || null);
-  const [loading, setLoading] = useState(true);
+  // Initialize synchronously from localStorage to prevent render flash/blank screens
+  const getInitialToken = () => {
+    try {
+      return localStorage.getItem('ops_sentinel_token') || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const getInitialUser = () => {
+    try {
+      const stored = localStorage.getItem('ops_sentinel_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const [token, setToken] = useState(getInitialToken);
+  const [user, setUser] = useState(getInitialUser);
+  const [loading, setLoading] = useState(false);
 
   // Synchronize Axios default headers with active token
   useEffect(() => {
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      localStorage.setItem('ops_sentinel_token', token);
+      try {
+        localStorage.setItem('ops_sentinel_token', token);
+      } catch (e) {}
       
-      // Fetch or restore profile
-      const storedUser = localStorage.getItem('ops_sentinel_user');
-      if (storedUser) {
-        try {
-          setUser(JSON.parse(storedUser));
-        } catch (e) {
-          console.error('Error parsing stored user:', e);
-        }
-      }
-
-      // Validate token with backend
+      // Background token verification (Non-destructive: will not wipe user session on network glitch)
       api.get('/auth/me')
         .then(res => {
-          if (res.data.success) {
+          if (res.data?.success && res.data.user) {
             setUser(res.data.user);
-            localStorage.setItem('ops_sentinel_user', JSON.stringify(res.data.user));
+            try {
+              localStorage.setItem('ops_sentinel_user', JSON.stringify(res.data.user));
+            } catch (e) {}
           }
         })
         .catch(err => {
-          console.warn('Session expired or invalid, logging out.');
-          logout();
-        })
-        .finally(() => setLoading(false));
+          // Only log out if the server explicitly rejects the token as unauthorized (401/403)
+          if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+            console.warn('Session expired (401/403), clearing credentials.');
+            logout();
+          } else {
+            console.warn('Backend background check skipped (offline/serverless cold-start). Preserving active session.');
+          }
+        });
     } else {
       delete api.defaults.headers.common['Authorization'];
-      localStorage.removeItem('ops_sentinel_token');
-      localStorage.removeItem('ops_sentinel_user');
+      try {
+        localStorage.removeItem('ops_sentinel_token');
+        localStorage.removeItem('ops_sentinel_user');
+      } catch (e) {}
       setUser(null);
-      setLoading(false);
     }
   }, [token]);
 
   const login = async (email, password) => {
     try {
       const response = await api.post('/auth/login', { email, password });
-      if (response.data.success) {
-        setToken(response.data.token);
-        setUser(response.data.user);
-        localStorage.setItem('ops_sentinel_token', response.data.token);
-        localStorage.setItem('ops_sentinel_user', JSON.stringify(response.data.user));
+      if (response.data && response.data.success) {
+        const receivedToken = response.data.token;
+        const receivedUser = response.data.user;
+        
+        api.defaults.headers.common['Authorization'] = `Bearer ${receivedToken}`;
+        try {
+          localStorage.setItem('ops_sentinel_token', receivedToken);
+          localStorage.setItem('ops_sentinel_user', JSON.stringify(receivedUser));
+        } catch (e) {}
+        
+        setToken(receivedToken);
+        setUser(receivedUser);
         return { success: true };
       }
+      return { success: false, error: response.data?.error || 'Login failed' };
     } catch (err) {
       return {
         success: false,
@@ -72,13 +97,21 @@ export function AuthProvider({ children }) {
   const register = async (username, email, password, role) => {
     try {
       const response = await api.post('/auth/register', { username, email, password, role });
-      if (response.data.success) {
-        setToken(response.data.token);
-        setUser(response.data.user);
-        localStorage.setItem('ops_sentinel_token', response.data.token);
-        localStorage.setItem('ops_sentinel_user', JSON.stringify(response.data.user));
+      if (response.data && response.data.success) {
+        const receivedToken = response.data.token;
+        const receivedUser = response.data.user;
+
+        api.defaults.headers.common['Authorization'] = `Bearer ${receivedToken}`;
+        try {
+          localStorage.setItem('ops_sentinel_token', receivedToken);
+          localStorage.setItem('ops_sentinel_user', JSON.stringify(receivedUser));
+        } catch (e) {}
+
+        setToken(receivedToken);
+        setUser(receivedUser);
         return { success: true };
       }
+      return { success: false, error: response.data?.error || 'Registration failed' };
     } catch (err) {
       return {
         success: false,
@@ -90,8 +123,10 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem('ops_sentinel_token');
-    localStorage.removeItem('ops_sentinel_user');
+    try {
+      localStorage.removeItem('ops_sentinel_token');
+      localStorage.removeItem('ops_sentinel_user');
+    } catch (e) {}
     delete api.defaults.headers.common['Authorization'];
   };
 
