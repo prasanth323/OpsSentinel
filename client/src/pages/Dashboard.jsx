@@ -98,11 +98,11 @@ export default function Dashboard() {
   const loadIncidents = async () => {
     try {
       const res = await api.get('/agents/incidents');
-      if (res.data.success) {
+      if (res.data?.success && Array.isArray(res.data.incidents)) {
         setIncidentHistory(res.data.incidents);
       }
     } catch (err) {
-      console.error('Failed to load incidents:', err);
+      console.warn('Could not load historical incidents:', err?.message);
     }
   };
 

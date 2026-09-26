@@ -125,22 +125,28 @@ export default function ApprovalCard({
             </div>
             
             <div className="p-3 space-y-1 max-h-52 overflow-y-auto text-[11px] leading-relaxed">
-              {terminalLogs.map((log, idx) => (
-                <div 
-                  key={idx} 
-                  className={
-                    log.includes('SUCCESS') 
-                      ? 'text-emerald-400 font-medium' 
-                      : log.includes('EXECUTING') || log.includes('$')
-                      ? 'text-cyan-300'
-                      : log.includes('error') || log.includes('dropped')
-                      ? 'text-rose-400'
-                      : 'text-slate-400'
-                  }
-                >
-                  {log}
-                </div>
-              ))}
+              {Array.isArray(terminalLogs) && terminalLogs.filter(Boolean).map((log, idx) => {
+                const text = typeof log === 'string' ? log : (log ? JSON.stringify(log) : '');
+                const isSuccess = text.includes('SUCCESS');
+                const isExec = text.includes('EXECUTING') || text.includes('$');
+                const isErr = text.includes('error') || text.includes('dropped') || text.includes('REJECTED');
+                return (
+                  <div 
+                    key={idx} 
+                    className={
+                      isSuccess 
+                        ? 'text-emerald-400 font-medium' 
+                        : isExec
+                        ? 'text-cyan-300'
+                        : isErr
+                        ? 'text-rose-400'
+                        : 'text-slate-400'
+                    }
+                  >
+                    {text}
+                  </div>
+                );
+              })}
               {isExecuting && (
                 <div className="text-cyan-400 flex items-center gap-1.5 pt-1 text-[11px]">
                   <Cpu className="w-3.5 h-3.5 animate-spin" />
