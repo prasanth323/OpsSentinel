@@ -96,10 +96,22 @@ router.post('/resolve', authenticateToken, async (req, res) => {
       }).catch(e => console.warn('[Supabase Sync Error]:', e.message));
     }
 
+    const newIncident = {
+      id: incidentId,
+      incident_code: incidentCode,
+      title: validatedData.title,
+      severity: validatedData.severity,
+      service: validatedData.service,
+      status: 'PENDING_APPROVAL',
+      confidence_score: pipelineResult.actionCard.confidenceScore,
+      created_at: new Date().toISOString()
+    };
+
     return res.status(200).json({
       success: true,
       incidentId,
       incidentCode,
+      incident: newIncident,
       agents: pipelineResult.agents,
       actionCard: pipelineResult.actionCard
     });

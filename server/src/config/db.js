@@ -11,7 +11,30 @@ let isInMemory = false;
 // In-Memory store for Serverless (Vercel) environments
 const memoryStore = {
   users: [],
-  incidents: [],
+  incidents: [
+    {
+      id: 101,
+      incident_code: 'INC-849102',
+      title: 'PostgreSQL Connection Pool Saturation',
+      severity: 'P1-CRITICAL',
+      service: 'db-proxy-service',
+      status: 'RESOLVED',
+      confidence_score: 98.7,
+      created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+      resolved_at: new Date(Date.now() - 3600000 * 2 + 180000).toISOString()
+    },
+    {
+      id: 102,
+      incident_code: 'INC-783291',
+      title: 'Kafka Consumer Group Lag Explosion',
+      severity: 'P2-HIGH',
+      service: 'payment-consumer-worker',
+      status: 'RESOLVED',
+      confidence_score: 99.2,
+      created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+      resolved_at: new Date(Date.now() - 3600000 * 5 + 240000).toISOString()
+    }
+  ],
   agent_executions: []
 };
 
@@ -47,18 +70,18 @@ const inMemoryDb = {
   exec: (sql) => {},
   pragma: () => {},
   prepare: (sql) => {
-    const trimmed = sql.trim().toUpperCase();
+    const norm = sql.replace(/\s+/g, ' ').trim().toUpperCase();
 
     return {
       run: (...params) => {
-        if (trimmed.startsWith('INSERT INTO USERS')) {
+        if (norm.startsWith('INSERT INTO USERS')) {
           const [username, email, password, role] = params;
           const id = memoryStore.users.length + 1;
           memoryStore.users.push({ id, username, email, password, role, created_at: new Date().toISOString() });
           return { lastInsertRowid: id };
         }
 
-        if (trimmed.startsWith('INSERT INTO INCIDENTS')) {
+        if (norm.startsWith('INSERT INTO INCIDENTS')) {
           const [incident_code, title, severity, service, status, error_logs, git_diff, initial_metrics] = params;
           const id = memoryStore.incidents.length + 1;
           const newIncident = {
@@ -77,7 +100,7 @@ const inMemoryDb = {
           return { lastInsertRowid: id };
         }
 
-        if (trimmed.startsWith('UPDATE INCIDENTS SET PROPOSED_COMMAND')) {
+        if (norm.includes('UPDATE INCIDENTS') && norm.includes('PROPOSED_COMMAND')) {
           const [proposed_command, blast_radius, confidence_score, id] = params;
           const inc = memoryStore.incidents.find(i => i.id === Number(id));
           if (inc) {
@@ -88,7 +111,7 @@ const inMemoryDb = {
           return { changes: 1 };
         }
 
-        if (trimmed.startsWith('UPDATE INCIDENTS SET STATUS = \'RESOLVED\'') || trimmed.includes('STATUS = ?')) {
+        if (norm.includes('UPDATE INCIDENTS') && (norm.includes('RESOLVED') || norm.includes('STATUS = ?'))) {
           const [final_metrics, rca_markdown, id] = params;
           const inc = memoryStore.incidents.find(i => i.id === Number(id));
           if (inc) {
@@ -100,17 +123,17 @@ const inMemoryDb = {
           return { changes: 1 };
         }
 
-        if (trimmed.startsWith('UPDATE INCIDENTS SET STATUS')) {
+        if (norm.includes('UPDATE INCIDENTS') && norm.includes('STATUS')) {
           const id = params[params.length - 1];
           const inc = memoryStore.incidents.find(i => i.id === Number(id));
           if (inc) {
-            if (trimmed.includes('REJECTED')) inc.status = 'REJECTED';
-            else if (trimmed.includes('RESOLVING')) inc.status = 'RESOLVING';
+            if (norm.includes('REJECTED')) inc.status = 'REJECTED';
+            else if (norm.includes('RESOLVING')) inc.status = 'RESOLVING';
           }
           return { changes: 1 };
         }
 
-        if (trimmed.startsWith('INSERT INTO AGENT_EXECUTIONS')) {
+        if (norm.startsWith('INSERT INTO AGENT_EXECUTIONS')) {
           const [incident_id, stage, agent_name, status, input_payload, output_payload] = params;
           const id = memoryStore.agent_executions.length + 1;
           memoryStore.agent_executions.push({
@@ -130,11 +153,11 @@ const inMemoryDb = {
       },
 
       get: (...params) => {
-        if (trimmed.startsWith('SELECT ID FROM USERS WHERE EMAIL = ?')) {
+        if (norm.includes('FROM USERS') && norm.includes('EMAIL = ?') && !norm.includes('USERNAME')) {
           return memoryStore.users.find(u => u.email === params[0]);
         }
 
-        if (trimmed.startsWith('SELECT ID, USERNAME, EMAIL, ROLE FROM USERS') || trimmed.startsWith('SELECT ID, USERNAME, EMAIL, ROLE, CREATED_AT FROM USERS WHERE ID = ?')) {
+        if (norm.includes('FROM USERS') && norm.includes('ID = ?')) {
           const user = memoryStore.users.find(u => u.id === Number(params[0]));
           if (user) {
             const { password, ...safeUser } = user;
@@ -143,12 +166,12 @@ const inMemoryDb = {
           return undefined;
         }
 
-        if (trimmed.includes('FROM USERS WHERE EMAIL = ? OR USERNAME = ?')) {
+        if (norm.includes('FROM USERS WHERE EMAIL = ? OR USERNAME = ?')) {
           const [identifier] = params;
           return memoryStore.users.find(u => u.email === identifier || u.username === identifier);
         }
 
-        if (trimmed.startsWith('SELECT * FROM INCIDENTS WHERE ID = ?')) {
+        if (norm.includes('FROM INCIDENTS WHERE ID = ?')) {
           return memoryStore.incidents.find(i => i.id === Number(params[0]));
         }
 
@@ -156,11 +179,11 @@ const inMemoryDb = {
       },
 
       all: (...params) => {
-        if (trimmed.startsWith('SELECT ID, INCIDENT_CODE, TITLE, SEVERITY, SERVICE, STATUS, CONFIDENCE_SCORE, CREATED_AT, RESOLVED_AT FROM INCIDENTS')) {
+        if (norm.includes('FROM INCIDENTS')) {
           return [...memoryStore.incidents].reverse().slice(0, 25);
         }
 
-        if (trimmed.startsWith('SELECT * FROM AGENT_EXECUTIONS WHERE INCIDENT_ID = ?')) {
+        if (norm.includes('FROM AGENT_EXECUTIONS')) {
           return memoryStore.agent_executions.filter(e => e.incident_id === Number(params[0]));
         }
 

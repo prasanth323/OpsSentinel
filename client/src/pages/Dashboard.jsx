@@ -58,6 +58,31 @@ const DEMO_SCENARIOS = [
   }
 ];
 
+const SEED_INCIDENTS = [
+  {
+    id: 101,
+    incident_code: 'INC-849102',
+    title: 'PostgreSQL Connection Pool Saturation',
+    severity: 'P1-CRITICAL',
+    service: 'db-proxy-service',
+    status: 'RESOLVED',
+    confidence_score: 98.7,
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    resolved_at: new Date(Date.now() - 3600000 * 2 + 180000).toISOString()
+  },
+  {
+    id: 102,
+    incident_code: 'INC-783291',
+    title: 'Kafka Consumer Group Lag Explosion',
+    severity: 'P2-HIGH',
+    service: 'payment-consumer-worker',
+    status: 'RESOLVED',
+    confidence_score: 99.2,
+    created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    resolved_at: new Date(Date.now() - 3600000 * 5 + 240000).toISOString()
+  }
+];
+
 const formatTimestamp = (dateStr) => {
   if (!dateStr) return 'Just now';
   try {
@@ -88,7 +113,20 @@ export default function Dashboard() {
   const [executionCompleted, setExecutionCompleted] = useState(false);
   const [rcaMarkdown, setRcaMarkdown] = useState(null);
 
-  const [incidentHistory, setIncidentHistory] = useState([]);
+  const [incidentHistory, setIncidentHistory] = useState(() => {
+    try {
+      const cached = localStorage.getItem('ops_sentinel_incident_history');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read cached incidents:', e);
+    }
+    return SEED_INCIDENTS;
+  });
 
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
@@ -98,8 +136,21 @@ export default function Dashboard() {
   const loadIncidents = async () => {
     try {
       const res = await api.get('/agents/incidents');
-      if (res.data?.success && Array.isArray(res.data.incidents)) {
-        setIncidentHistory(res.data.incidents);
+      if (res.data?.success && Array.isArray(res.data.incidents) && res.data.incidents.length > 0) {
+        setIncidentHistory(prev => {
+          const serverItems = res.data.incidents;
+          const existingIds = new Set(prev.map(i => i.incident_code || i.id));
+          const toAdd = serverItems.filter(i => !existingIds.has(i.incident_code) && !existingIds.has(i.id));
+          const updated = prev.map(localItem => {
+            const match = serverItems.find(s => s.id === localItem.id || s.incident_code === localItem.incident_code);
+            return match ? { ...localItem, ...match } : localItem;
+          });
+          const merged = [...toAdd, ...updated];
+          try {
+            localStorage.setItem('ops_sentinel_incident_history', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
       }
     } catch (err) {
       console.warn('Could not load historical incidents:', err?.message);
@@ -136,6 +187,26 @@ export default function Dashboard() {
         setActiveIncidentId(response.data.incidentId);
         setAgents(response.data.agents);
         setActionCard(response.data.actionCard);
+
+        const newRecord = response.data.incident || {
+          id: response.data.incidentId,
+          incident_code: response.data.incidentCode || `INC-${Math.floor(100000 + Math.random() * 900000)}`,
+          title: scenario.title,
+          severity: scenario.severity,
+          service: scenario.service,
+          status: 'PENDING_APPROVAL',
+          confidence_score: response.data.actionCard?.confidenceScore || 98.4,
+          created_at: new Date().toISOString()
+        };
+
+        setIncidentHistory(prev => {
+          const filtered = prev.filter(i => i.id !== newRecord.id && i.incident_code !== newRecord.incident_code);
+          const updated = [newRecord, ...filtered];
+          try {
+            localStorage.setItem('ops_sentinel_incident_history', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
       }
     } catch (err) {
       console.error('Error resolving incident:', err);
@@ -200,6 +271,20 @@ export default function Dashboard() {
             setExecutionCompleted(true);
             setCurrentMetrics(response.data.healthyMetrics);
             setRcaMarkdown(response.data.rcaMarkdown);
+
+            setIncidentHistory(prev => {
+              const updated = prev.map(inc => {
+                if (inc.id === activeIncidentId || inc.incident_code === activeIncidentId) {
+                  return { ...inc, status: 'RESOLVED', resolved_at: new Date().toISOString() };
+                }
+                return inc;
+              });
+              try {
+                localStorage.setItem('ops_sentinel_incident_history', JSON.stringify(updated));
+              } catch (e) {}
+              return updated;
+            });
+
             loadIncidents();
           }
         }, 140);
@@ -223,6 +308,20 @@ export default function Dashboard() {
         ...prev,
         `[SENTINEL-GATEKEEPER] Remediation aborted by operator.`
       ]);
+
+      setIncidentHistory(prev => {
+        const updated = prev.map(inc => {
+          if (inc.id === activeIncidentId || inc.incident_code === activeIncidentId) {
+            return { ...inc, status: 'REJECTED' };
+          }
+          return inc;
+        });
+        try {
+          localStorage.setItem('ops_sentinel_incident_history', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
       loadIncidents();
     } catch (err) {
       console.error('Reject error:', err);
@@ -468,9 +567,14 @@ export default function Dashboard() {
                 Audit Trail & Historical Runs
               </h2>
             </div>
-            <span className="text-[11px] font-mono text-slate-500">
-              SQLite Audit Store
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-800/40 text-cyan-400 font-medium">
+                {incidentHistory.length} Recorded
+              </span>
+              <span className="text-[11px] font-mono text-slate-500 hidden sm:inline">
+                Supabase & SQLite Audit Store
+              </span>
+            </div>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden">
@@ -495,8 +599,8 @@ export default function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    incidentHistory.map((inc) => (
-                      <tr key={inc.id} className="hover:bg-slate-800/30 transition-colors">
+                    incidentHistory.map((inc, idx) => (
+                      <tr key={inc.incident_code || inc.id || idx} className="hover:bg-slate-800/30 transition-colors">
                         <td className="py-2.5 px-4 text-cyan-400 font-semibold">{inc.incident_code}</td>
                         <td className="py-2.5 px-4 font-sans text-slate-200">{inc.title}</td>
                         <td className="py-2.5 px-4 text-slate-400">{inc.service}</td>
